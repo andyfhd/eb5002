@@ -101,8 +101,9 @@ class CharRNN(nn.Module):
         #define the LSTM
         #LSTM hyperparameter:
         #input size = one-hot-encoding size = len of vocab lib
-        #n_hidden = number of lstm cells
-        #n_layers = number of vertically stacked lstm layers. y from first layer is directly feed into x of next layer
+        #n_hidden = number of lstm unit in each layer, there is no information sharing among lstm units
+        #n_layers = number of vertically stacked lstm layers. 
+        #output from 1st layer is fed into second layer in a fully connected manner
         self.lstm = nn.LSTM(len(self.chars), n_hidden, n_layers, 
                             dropout=drop_prob, batch_first=True)
         
