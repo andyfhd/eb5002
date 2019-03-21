@@ -293,14 +293,19 @@ def predict(net, char, h=None, top_k=None):
         # tensor inputs
         x = np.array([[net.char2int[char]]])
         x = one_hot_encode(x, len(net.chars))
+        
+        #input is one hot encoding of a single character
         inputs = torch.from_numpy(x)
         
         if(train_on_gpu):
             inputs = inputs.cuda()
         
-        # detach hidden state from history
+        # during generation, the hidden state is not reset
+        # instead, it will always take the hidden state from previous char output and use it as input for this char
         h = tuple([each.data for each in h])
+        
         # get the output of the model
+        #during training, sequence length is > 1, but during prediction, sequence length is 1. is this an issue?
         out, h = net(inputs, h)
 
         # get the character probabilities
@@ -335,9 +340,11 @@ def sample(net, size, prime='The', top_k=None):
     # First off, run through the prime characters
     chars = [ch for ch in prime]
     h = init_hidden(net,1)
+    
+    #run but not use the predicted output, only keep the hidden states
     for ch in prime:
         char, h = predict(net, ch, h, top_k=top_k)
-
+    
     chars.append(char)
     
     # Now pass in the previous character and get a new one
