@@ -101,7 +101,7 @@ class CharRNN(nn.Module):
         #define the LSTM
         #LSTM hyperparameter:
         #input size = one-hot-encoding size = len of vocab lib
-        #n_hidden = number of hidden lstm cells for each input character
+        #n_hidden = number of lstm cells
         #n_layers = number of vertically stacked lstm layers. y from first layer is directly feed into x of next layer
         self.lstm = nn.LSTM(len(self.chars), n_hidden, n_layers, 
                             dropout=drop_prob, batch_first=True)
@@ -130,7 +130,7 @@ class CharRNN(nn.Module):
         #this is to feed into the format requirement of cross entropy loss function
         out = out.contiguous().view(-1, self.n_hidden)
         
-        #put x through the fully-connected layer
+        #put output through the fully-connected layer
         #no softmax activation? shall we add one?
         out = self.fc(out)
         
@@ -186,8 +186,8 @@ def train(net, data, epochs=10, batch_size=10, seq_length=50, lr=0.001, clip=5, 
             if(train_on_gpu):
                 inputs, targets = inputs.cuda(), targets.cuda()
 
-            # Reset the hidden and cell states for each batch, so the backprop happen withing current
-            # sequence length, and will not go back to previous sequence length
+            # Reset the hidden and cell states for each batch, so the backprop happen withing current loop of
+            # sequence length, and will not go back to previous loop
             # what happen if we dont reset?
             h = tuple([each.data for each in h])
 
@@ -305,7 +305,9 @@ def predict(net, char, h=None, top_k=None):
         h = tuple([each.data for each in h])
         
         # get the output of the model
-        #during training, sequence length is > 1, but during prediction, sequence length is 1. is this an issue?
+        #during training, sequence length is > 1, but during prediction, sequence length is 1.
+        #so each time it will generate one char, but because the hidden state is not cleared, it can still
+        #remember information from all previous characters
         out, h = net(inputs, h)
 
         # get the character probabilities
