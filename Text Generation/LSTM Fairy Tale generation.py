@@ -101,9 +101,8 @@ class CharRNN(nn.Module):
         #define the LSTM
         #LSTM hyperparameter:
         #input size = one-hot-encoding size = len of vocab lib
-        #n_hidden = number of lstm unit in each layer, there is no information sharing among lstm units
-        #n_layers = number of vertically stacked lstm layers. 
-        #output from 1st layer is fed into second layer in a fully connected manner
+        #n_hidden = LSTM output vector size
+        #n_layers = number of vertically stacked lstm layers.
         self.lstm = nn.LSTM(len(self.chars), n_hidden, n_layers, 
                             dropout=drop_prob, batch_first=True)
         
@@ -132,7 +131,7 @@ class CharRNN(nn.Module):
         out = out.contiguous().view(-1, self.n_hidden)
         
         #put output through the fully-connected layer
-        #no softmax activation? shall we add one?
+        #no last layer activation at training, as we are using cross entropy loss, which is equivalent to have logsoftmax + nllloss
         out = self.fc(out)
         
         # return the final output and the hidden state
@@ -311,7 +310,7 @@ def predict(net, char, h=None, top_k=None):
         #remember information from all previous characters
         out, h = net(inputs, h)
 
-        # get the character probabilities
+        # get the character probabilities, here we use softmax
         p = F.softmax(out, dim=1).data
         if(train_on_gpu):
             p = p.cpu() # move to cpu
