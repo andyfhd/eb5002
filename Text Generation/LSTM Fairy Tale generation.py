@@ -7,6 +7,7 @@ import torch.nn.functional as F
 # Open text file and read in data as `text`
 with open('C:/Python Projects/Eb5002/Text Generation/data/Grimm_text.txt', 'r') as f:
     text = f.read()
+    text=text.lower()
 
 # Showing the first 100 characters
 text[:100]
@@ -103,9 +104,8 @@ class CharRNN(nn.Module):
         #input size = one-hot-encoding size = len of vocab lib
         #n_hidden = LSTM output vector size
         #n_layers = number of vertically stacked lstm layers.
-        self.lstm = nn.LSTM(len(self.chars), n_hidden, n_layers, 
+        self.lstm = nn.LSTM(len(self.chars), n_hidden, n_layers,
                             dropout=drop_prob, batch_first=True)
-        
         #define a dropout layer
         self.dropout = nn.Dropout(drop_prob)
         
@@ -113,7 +113,7 @@ class CharRNN(nn.Module):
         #fc layer is required, as n_hidden <> input size, the lstm output size will be (sequence length, batch size, n_hidden) 
         #fc output shape is (sequence length, batch size, one-hot-encoding size)
         #so that each of the output can correspondon to "probabilty" of each char in the the vocab lib
-        self.fc = nn.Linear(n_hidden, len(self.chars))      
+        self.fc = nn.Linear(n_hidden, len(self.chars))
     
     def forward(self, x, hidden):
         ''' Forward pass through the network. 
@@ -121,8 +121,8 @@ class CharRNN(nn.Module):
                 
         #get the outputs and the new hidden state from the lstm
         #hidden has two tensor, one for cell state and one for hidden state
-        r_output, hidden = self.lstm(x, hidden)
-        
+        r_output, hidden = self.lstm1(x, hidden)
+
         #pass through a dropout layer
         out = self.dropout(r_output)
         
@@ -138,7 +138,8 @@ class CharRNN(nn.Module):
         return out, hidden
 
 # Declaring the train method
-def train(net, data, epochs=10, batch_size=10, seq_length=50, lr=0.001, clip=5, val_frac=0.1, print_every=10):
+
+def train(net, data, epochs, batch_size, seq_length_set, lr=0.001, clip=5, val_frac=0.1, print_every=10):
     ''' Training a network 
     
         Arguments
@@ -157,7 +158,7 @@ def train(net, data, epochs=10, batch_size=10, seq_length=50, lr=0.001, clip=5, 
     '''
     #set the net to training model, this enables drop out
     net.train()
-    
+    torch.enable_grad()
     #use adam optimizer and cross entropy loss, as the task is one label classification
     opt = torch.optim.Adam(net.parameters(), lr=lr)
     criterion = nn.CrossEntropyLoss()
@@ -172,74 +173,74 @@ def train(net, data, epochs=10, batch_size=10, seq_length=50, lr=0.001, clip=5, 
     
     counter = 0
     n_chars = len(net.chars)
-    for e in range(epochs):
-        # initialize hidden state
-        h = init_hidden(net,batch_size)
-        
-        for x, y in get_batches(data, batch_size, seq_length):
-            counter += 1
-            
-            # One-hot encode our data and make them Torch tensors
-            x = one_hot_encode(x, n_chars)
-            inputs, targets = torch.from_numpy(x), torch.from_numpy(y)
-            
-            if(train_on_gpu):
-                inputs, targets = inputs.cuda(), targets.cuda()
+    for seq_length in seq_length_set:
+        for e in range(epochs):
+            # initialize hidden state
+            h = init_hidden(net,batch_size)
 
-            # Reset the hidden and cell states for each batch, so the backprop happen withing current loop of
-            # sequence length, and will not go back to previous loop
-            # what happen if we dont reset?
-            h = tuple([each.data for each in h])
+            for x, y in get_batches(data, batch_size, seq_length):
+                counter += 1
 
-            # zero accumulated gradients
-            net.zero_grad()
-            
-            # get the output from the model
-            output, h = net(inputs, h)
-            
-            # calculate the loss and perform backprop
-            loss = criterion(output, targets.view(batch_size*seq_length).long())
-            loss.backward()
-            
-            # `clip_grad_norm` helps prevent the exploding gradient problem in RNNs / LSTMs.
-            nn.utils.clip_grad_norm_(net.parameters(), clip)
-            opt.step()
-            
-            # Do one run of validation on validation set for n batches run.
-            if counter % print_every == 0:
-                # Get validation loss
-                val_h = init_hidden(net,batch_size)
-                val_losses = []
-                
-                #set network to eval mode, will it faster to disable grad?
-                
-                net.eval()
-                for x, y in get_batches(val_data, batch_size, seq_length):
-                    # One-hot encode our data and make them Torch tensors
-                    x = one_hot_encode(x, n_chars)
-                    x, y = torch.from_numpy(x), torch.from_numpy(y)
-                    
-                    #similar to training, reset h for each batch, so that the prediction of current batch
-                    #is only depend on the data in current batch, not previous batches.
-                    val_h = tuple([each.data for each in val_h])
-                    
-                    inputs, targets = x, y
-                    if(train_on_gpu):
-                        inputs, targets = inputs.cuda(), targets.cuda()
+                # One-hot encode our data and make them Torch tensors
+                x = one_hot_encode(x, n_chars)
+                inputs, targets = torch.from_numpy(x), torch.from_numpy(y)
 
-                    output, val_h = net(inputs, val_h)
-                    val_loss = criterion(output, targets.view(batch_size*seq_length).long())
-                    
-                    #no backward, so model parameter not changed while test on validation set
-                    
-                    val_losses.append(val_loss.item())
-                
-                net.train() # reset to train mode after iterationg through validation data
-                
-                print("Epoch: {}/{}...".format(e+1, epochs),
-                      "Step: {}...".format(counter),
-                      "Loss: {:.4f}...".format(loss.item()),
-                      "Val Loss: {:.4f}".format(np.mean(val_losses)))
+                if(train_on_gpu):
+                    inputs, targets = inputs.cuda(), targets.cuda()
+
+                # convert h from torch tensor to normal array, so that backprop will not happen on h
+                h = tuple([each.data for each in h])
+
+                # zero accumulated gradients
+                net.zero_grad()
+
+                # get the output from the model
+                output, h = net(inputs, h)
+
+                # calculate the loss and perform backprop
+                loss = criterion(output, targets.view(batch_size*seq_length).long())
+                loss.backward()
+
+                # `clip_grad_norm` helps prevent the exploding gradient problem in RNNs / LSTMs.
+                nn.utils.clip_grad_norm_(net.parameters(), clip)
+                opt.step()
+
+                # Do one run of validation on validation set for n batches run.
+                if counter % print_every == 0:
+                    # Get validation loss
+                    val_h = init_hidden(net,batch_size)
+                    val_losses = []
+
+                    #set network to eval mode, will it faster to disable grad?
+
+                    net.eval()
+                    torch.no_grad()
+                    val_seq_length=1
+                    for x, y in get_batches(val_data, batch_size, val_seq_length):
+                        # One-hot encode our data and make them Torch tensors
+                        x = one_hot_encode(x, n_chars)
+                        x, y = torch.from_numpy(x), torch.from_numpy(y)
+
+                        #no need to do this, as there is no backprop anyway
+                        #val_h = tuple([each.data for each in val_h])
+
+                        inputs, targets = x, y
+                        if(train_on_gpu):
+                            inputs, targets = inputs.cuda(), targets.cuda()
+
+                        output, val_h = net(inputs, val_h)
+                        val_loss = criterion(output, targets.view(batch_size*val_seq_length).long())
+
+                        #no backward, so model parameter not changed while test on validation set
+
+                        val_losses.append(val_loss.item())
+
+                    net.train() # reset to train mode after iterationg through validation data
+
+                    print("Epoch: {}/{}...".format(e+1, epochs),
+                          "Step: {}...".format(counter),
+                          "Loss: {:.4f}...".format(loss.item()),
+                          "Val Loss: {:.4f}".format(np.mean(val_losses)))
 
 
 def init_hidden(net, batch_size):
@@ -267,11 +268,13 @@ print(net)
 
 # Declaring the hyperparameters
 batch_size = 128
-seq_length = 100
-n_epochs = 20 # start smaller if you are just testing initial behavior
+set=np.linspace(10,190,10)
+np.random.shuffle(set)
+seq_length_set = list(map(int,  list(set)))
+n_epochs = 2 # start smaller if you are just testing initial behavior
 
 # train the model
-train(net, encoded, epochs=n_epochs, batch_size=batch_size, seq_length=seq_length, lr=0.001, print_every=50)
+train(net, encoded, epochs=n_epochs, batch_size=batch_size, seq_length_set=seq_length_set, lr=0.001, print_every=50)
 
 # Saving the model
 model_name = 'rnn_20_epoch_Grimm_text.net'
@@ -357,4 +360,4 @@ def sample(net, size, prime='The', top_k=None):
     return ''.join(chars)
     
 # Generating new text
-print(sample(net, 1000, prime='<', top_k=5))
+print(sample(net, 2000, prime='<hero in the wood>', top_k=5))
