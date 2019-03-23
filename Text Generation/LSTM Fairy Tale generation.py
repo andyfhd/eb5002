@@ -27,6 +27,7 @@ encoded = np.array([char2int[ch] for ch in text])
 # Showing the first 100 encoded characters
 encoded[:100]
 
+
 # Defining method to encode one hot labels
 #as char by char generation, the vocab size is 68, one hot encode is good enough
 
@@ -121,7 +122,7 @@ class CharRNN(nn.Module):
                 
         #get the outputs and the new hidden state from the lstm
         #hidden has two tensor, one for cell state and one for hidden state
-        r_output, hidden = self.lstm1(x, hidden)
+        r_output, hidden = self.lstm(x, hidden)
 
         #pass through a dropout layer
         out = self.dropout(r_output)
@@ -139,7 +140,7 @@ class CharRNN(nn.Module):
 
 # Declaring the train method
 
-def train(net, data, epochs, batch_size, seq_length_set, lr=0.001, clip=5, val_frac=0.1, print_every=10):
+def train(net, data, epochs, batch_size, seq_length_set, lr=0.001, clip=5, val_frac=0.1,print_every=10):
     ''' Training a network 
     
         Arguments
@@ -158,7 +159,7 @@ def train(net, data, epochs, batch_size, seq_length_set, lr=0.001, clip=5, val_f
     '''
     #set the net to training model, this enables drop out
     net.train()
-    torch.enable_grad()
+
     #use adam optimizer and cross entropy loss, as the task is one label classification
     opt = torch.optim.Adam(net.parameters(), lr=lr)
     criterion = nn.CrossEntropyLoss()
@@ -188,7 +189,7 @@ def train(net, data, epochs, batch_size, seq_length_set, lr=0.001, clip=5, val_f
                 if(train_on_gpu):
                     inputs, targets = inputs.cuda(), targets.cuda()
 
-                # convert h from torch tensor to normal array, so that backprop will not happen on h
+                # only copy the data,but not grad from the previous hiddens, so that backprop will not happen on h
                 h = tuple([each.data for each in h])
 
                 # zero accumulated gradients
@@ -208,34 +209,34 @@ def train(net, data, epochs, batch_size, seq_length_set, lr=0.001, clip=5, val_f
                 # Do one run of validation on validation set for n batches run.
                 if counter % print_every == 0:
                     # Get validation loss
-                    val_h = init_hidden(net,batch_size)
+
                     val_losses = []
-
                     #set network to eval mode, will it faster to disable grad?
-
                     net.eval()
                     torch.no_grad()
-                    val_seq_length=1
-                    for x, y in get_batches(val_data, batch_size, val_seq_length):
+                    val_seq_length=128
+                    val_batch_size=100
+                    val_h = init_hidden(net, val_batch_size)
+                    for x, y in get_batches(val_data, val_batch_size, val_seq_length):
                         # One-hot encode our data and make them Torch tensors
                         x = one_hot_encode(x, n_chars)
                         x, y = torch.from_numpy(x), torch.from_numpy(y)
 
-                        #no need to do this, as there is no backprop anyway
-                        #val_h = tuple([each.data for each in val_h])
+                        val_h = tuple([each.data for each in val_h])
 
                         inputs, targets = x, y
                         if(train_on_gpu):
                             inputs, targets = inputs.cuda(), targets.cuda()
 
                         output, val_h = net(inputs, val_h)
-                        val_loss = criterion(output, targets.view(batch_size*val_seq_length).long())
 
+                        val_loss = criterion(output, targets.view(val_batch_size*val_seq_length).long())
                         #no backward, so model parameter not changed while test on validation set
 
                         val_losses.append(val_loss.item())
 
                     net.train() # reset to train mode after iterationg through validation data
+                    torch.enable_grad()
 
                     print("Epoch: {}/{}...".format(e+1, epochs),
                           "Step: {}...".format(counter),
@@ -317,21 +318,21 @@ def predict(net, char, h=None, top_k=None):
         p = F.softmax(out, dim=1).data
         if(train_on_gpu):
             p = p.cpu() # move to cpu
-        
+
         # get top characters
         if top_k is None:
             top_ch = np.arange(len(net.chars))
         else:
             p, top_ch = p.topk(top_k)
             top_ch = top_ch.numpy().squeeze()
-        
+
         # select the likely next character with some element of randomness
+        # This is to prevent it generate repeated pattern
         p = p.numpy().squeeze()
         char = np.random.choice(top_ch, p=p/p.sum())
-        
         # return the encoded value of the predicted char and the hidden state
         return net.int2char[char], h
-        
+
 # Declaring a method to generate new text
 def sample(net, size, prime='The', top_k=None):
         
@@ -348,16 +349,16 @@ def sample(net, size, prime='The', top_k=None):
     
     #run but not use the predicted output, only keep the hidden states
     for ch in prime:
-        char, h = predict(net, ch, h, top_k=top_k)
+        char, h, = predict(net, ch, h, top_k=top_k)
     
     chars.append(char)
     
     # Now pass in the previous character and get a new one
     for ii in range(size):
-        char, h = predict(net, chars[-1], h, top_k=top_k)
+        char, h, = predict(net, chars[-1], h, top_k=top_k)
         chars.append(char)
 
     return ''.join(chars)
-    
+
 # Generating new text
 print(sample(net, 2000, prime='<hero in the wood>', top_k=5))
