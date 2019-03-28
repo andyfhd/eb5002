@@ -3,7 +3,7 @@ import numpy as np
 import torch
 from torch import nn
 import torch.nn.functional as F
-
+import matplotlib.pyplot as plt
 # Open text file and read in data as `text`
 with open('C:/Python Projects/Eb5002/Text Generation/data/Grimm_text.txt', 'r') as f:
     text = f.read()
@@ -191,6 +191,8 @@ def train(net, data, epochs, batch_size, seq_length_set, lr=0.001, clip=5, val_f
 
                 # only copy the data,but not grad from the previous hiddens, so that backprop will not happen on h
                 h = tuple([each.data for each in h])
+                # the network still trains well, even we dont use any info from previous hidden, provided sequence length is long enough
+                #h=init_hidden(net,batch_size)
 
                 # zero accumulated gradients
                 net.zero_grad()
@@ -242,7 +244,9 @@ def train(net, data, epochs, batch_size, seq_length_set, lr=0.001, clip=5, val_f
                           "Step: {}...".format(counter),
                           "Loss: {:.4f}...".format(loss.item()),
                           "Val Loss: {:.4f}".format(np.mean(val_losses)))
-
+                    train_loss_plot.append(loss.item())
+                    val_loss_plot.append(np.mean(val_losses))
+                    plot_x.append(counter)
 
 def init_hidden(net, batch_size):
     ''' Initializes hidden state '''
@@ -261,24 +265,29 @@ def init_hidden(net, batch_size):
 
 # Define and print the net
 n_hidden=512
-n_layers=2
+n_layers=4
 
 net = CharRNN(chars, n_hidden, n_layers)
 
 print(net)
 
 # Declaring the hyperparameters
-batch_size = 128
+batch_size = 256
 set=np.linspace(10,190,10)
 np.random.shuffle(set)
 seq_length_set = list(map(int,  list(set)))
 n_epochs = 2 # start smaller if you are just testing initial behavior
-
+global train_loss
+global val_loss
+global plot_x
+train_loss_plot = []
+val_loss_plot = []
+plot_x = []
 # train the model
 train(net, encoded, epochs=n_epochs, batch_size=batch_size, seq_length_set=seq_length_set, lr=0.001, print_every=50)
 
 # Saving the model
-model_name = 'rnn_20_epoch_Grimm_text.net'
+model_name = 'rnn_2_epoch_Grimm_text.net'
 
 checkpoint = {'n_hidden': net.n_hidden,
               'n_layers': net.n_layers,
@@ -362,3 +371,19 @@ def sample(net, size, prime='The', top_k=None):
 
 # Generating new text
 print(sample(net, 2000, prime='<hero in the wood>', top_k=5))
+
+def draw_result(lst_iter, lst_loss_train, lst_loss_test, title):
+    plt.plot(lst_iter, lst_loss_train, '-b', label='loss_train')
+    plt.plot(lst_iter, lst_loss_test, '-r', label='loss_validation')
+
+    plt.xlabel("n iteration")
+    plt.legend(loc='upper left')
+    plt.title(title)
+
+    # save image
+    plt.savefig(title+".png")  # should before show method
+
+    # show
+    plt.show()
+
+draw_result(plot_x, train_loss_plot, val_loss_plot, "Loss")
